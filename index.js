@@ -42,6 +42,42 @@ const ETH_PER_BNB = 1 / 4;
 // ---------------------------
 // 1. CREATE QR-CODE Tx API
 // ---------------------------
+
+// const generateBNBQRCode = async (receiver, amountBNB, chainId) => {
+//     try {
+//         // Convert BNB → wei
+//         const amountInWei = BigInt(amountBNB * 1e18).toString();
+//         // EIP-681 URI
+//         const uri = `ethereum:${receiver}@${chainId}?value=${amountInWei}`;
+//         console.log(":link: Payment URI:", uri);
+//         // QR code in terminal
+//         const qrCode = await QRCode.toString(uri, { type: "terminal", small: true });
+//         console.log("\n:coin: Scan this QR code with MetaMask / Trust Wallet :\n");
+//         console.log(qrCode);
+//         return { uri, qrCode };
+//     } catch (err) {
+//         console.error(":x: Error:", err.message);
+//     }
+// };
+
+const generateBNBQRCode = async (receiver, amountBNB, chainId) => {
+    try {
+        const amountInWei = BigInt(amountBNB * 1e18).toString();
+
+        const uri = `ethereum:${receiver}@${chainId}?value=${amountInWei}`;
+        console.log("Payment URI:", uri);
+
+        // Generate PNG IMAGE instead of terminal ASCII
+        const qrPng = await QRCode.toDataURL(uri);
+
+        return { uri, qrPng };
+    } catch (err) {
+        console.error("QR generation error:", err);
+        throw err;
+    }
+};
+
+
 app.post("/create-qr-tx", async (req, res) => {
     try {
         const {
@@ -52,37 +88,27 @@ app.post("/create-qr-tx", async (req, res) => {
             referrer
         } = req.body;
 
-
-        // Convert BNB amount → ETH
+        // Convert BNB wei → BNB float
         const bnbAmount = Number(amountInWei) / 1e18;
+
+        // Convert to ETH
         const ethRequired = bnbAmount * ETH_PER_BNB;
 
-        // Convert to Wei (BigInt)
-        const ethValue = ethers.parseEther(ethRequired.toString());
-
-        const tx = {
-            to: ETH_RECEIVER,
-            value: ethValue.toString(), // FIX
-            data: "0x"
-        };
-
-        // QR code expects stringifiable object
-        const qrPayload = {
-            to: ETH_RECEIVER,
-            value: ethValue.toString()
-        };
-
-        const qrString = JSON.stringify(qrPayload);
-        const qrCodeBase64 = await QRCode.toDataURL(qrString);
+        // FIX: await required
+        const { uri, qrPng } = await generateBNBQRCode(
+            ETH_RECEIVER,
+            ethRequired,
+            11155111
+        );
 
         res.json({
             success: true,
-            qr: qrCodeBase64,
-            encodedTx: qrPayload,
+            qr: qrPng,
+            encodedTx: uri,
             bnbUserAddress,
             saleType,
             tokenAddress,
-            amountInWei: amountInWei.toString(),
+            amountInWei, // already a string
             referrer,
             message: "Scan this QR with an Ethereum wallet"
         });
@@ -122,6 +148,7 @@ app.post("/trigger-buy", async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 });
+
 
 // ---------------------------
 // START SERVER
